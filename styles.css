@@ -1,0 +1,79 @@
+body {
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    background-color: #f0ffca;
+    margin: 0;
+    padding: 0;
+}
+
+.header {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    background-color: #f0ffca;
+    text-align: center;
+    margin-bottom: 10px;
+    padding: 10px 0;
+    z-index: 1000;
+}
+
+.logo {
+    max-width: 450px;
+}
+
+.container {
+    max-width: 600px;
+    margin: 163px auto 20px;
+    padding: 0 2%;
+}
+
+.card {
+    width: 96%;
+    margin: 18px auto;
+    padding: 15px;
+    border: 6px solid #4d116d;
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.restaurant-name {
+    font-weight: bold;
+    font-size: 18px;
+    color: white;
+}
+
+.distance {
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+}
+
+.address, .hours, .review {
+    margin-bottom: 5px;
+    color: white;
+}
+
+.directions-btn {
+    background-color: #ae0c0c;
+    border: 4px solid #7c0000;
+    color: white;
+    font-family: 'Courier New', Courier, monospace;
+    padding: 10px 15px;
+    text-align: center;
+    text-decoration: none;
+    font-size: 16px;
+    margin-top: -41px;
+    cursor: pointer;
+    float: right;
+}
+
+#map {
+    height: 400px;
+    width: 100%;
+}

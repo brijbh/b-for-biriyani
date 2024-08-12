@@ -1,0 +1,81 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f0ffca;
+    margin: 0;
+    padding: 0;
+    max-width: 480px;
+    margin: 0 auto;
+    overflow-x: hidden;
+}
+
+#app-logo {
+    width: 96%;
+    margin: 0 auto;
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background-color: #f0ffca;
+    padding: 4px;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+#places {
+    margin-top: 100px; /* Adjust this based on the height of your logo */
+    padding: 10px;
+    overflow-y: auto;
+    max-height: calc(100vh - 100px); /* Adjust this based on the height of your logo */
+}
+
+.card {
+    background-color: #fff;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 6px solid #4d116d;
+    border-radius: 8px;
+    width: 96%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.card:nth-child(1n) {
+    background-color: #784e5c;
+}
+
+.card:nth-child(2n) {
+    background-color: #43a17f;
+}
+
+.card:nth-child(3n) {
+    background-color: #bd69ff;
+}
+
+.card:nth-child(4n) {
+    background-color: #fa639a;
+}
+
+.card:nth-child(5n) {
+    background-color: #3fb1e5;
+}
+
+.card:nth-child(6n) {
+    background-color: #a18dc2;
+}
+
+.directions-button {
+    background-color: #ae0c0c;
+    color: #fff;
+    border: 4px solid #7c0000;
+    padding: 5px;
+    text-align: center;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.directions-button:hover {
+    background-color: #7c0000;
+}

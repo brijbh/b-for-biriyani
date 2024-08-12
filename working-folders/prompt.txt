@@ -1,0 +1,38 @@
+awesome that works....now I need to make the following changes. 
+1. Very important. This layout should be mobile screen only. So please set the max width to a mobile phone screen size. When the user  opens this in browser, it shows this app centered in the screen with max width as per a mobile phone. When the user opens this in mobile, it shows as a app fitting the mobile screen. App should open with location permission is not already available.
+
+2. Do not show the map on the app. Show only the listing. Open the map when the user clicks directions.
+
+3. Show each place/listing as a card. There is one card per row take 96% width. Card listing have vertical scrolling. See the uploaded card.jpg for the layout.
+
+4. Each card should contain the following information
+* Restaurant Name
+* Distance from user location, use the units as set in the users device locale.
+* Hours info, is it open and when it will close
+* Google review stars
+
+5. Card layout is somewhat like this, as shown in the attached card.jpg
+
+--------------------------------------------------
+Name of the restarant					distance
+Address
+Hours
+Reviews							Directions Button
+--------------------------------------------------
+
+6. App colors:
+* Use the following colors in random as the background of each card. #784e5c, #43a17f, #bd69ff, #fa639a, #3fb1e5, a18dc2
+* All the cards have the same border value: 6px solid #4d116d, radius: 8px
+* App background: #f0ffca
+* Directions-Button backgroud: #ae0c0c
+* Directions-button-border: 4px solid #7c0000
+
+8. The app logo is attached: app-logo.jpg
+
+9. When the user scrolls the card, the logo should be visible at all times, fixed on top.
+
+10. Set this code to find "Biriyani Near Me"
+
+
+
+map api key: AIzaSyBlO7OBZG1i3r2mly6-tqoo6Dh3km-iuMQ
