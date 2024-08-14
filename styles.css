@@ -22,8 +22,10 @@ body {
 
 .container {
     max-width: 600px;
-    margin: 163px auto 20px;
+    margin: 25px auto 20px;
     padding: 0 2%;
+    overflow-y: auto;
+    height: calc(100vh - 580px);
 }
 
 .card {
@@ -73,7 +75,75 @@ body {
     float: right;
 }
 
+.footer {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background-color: #4d116d;
+    text-align: center;
+    padding: 10px 0;
+    z-index: 1000;
+}
+
+.footer-btn {
+    background-color: #ae0c0c;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    margin: 0 10px;
+    font-family: 'Courier New', Courier, monospace;
+}
+
 #map {
     height: 400px;
     width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    max-width: 90%;
+    width: 300px;
+}
+
+.hidden {
+    display: none;
+}
+
+.popup-content {
+    text-align: center;
+}
+
+.popup-close, .popup-share {
+    background-color: #ae0c0c;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 10px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.popup-share {
+    background-color: #4d116d;
+}
+
+.disclosure {
+    font-size: 12px;
+    margin-top: 10px;
+    color: #7c7c7c;
+    text-align: left;
 }

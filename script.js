@@ -36,7 +36,9 @@ function updateMapWithLocation(latitude, longitude) {
 function fetchNearbyRestaurants(latitude, longitude) {
     const deltaLat = kmToDegrees(2); // Convert 2 km to degrees for latitude
     const deltaLon = kmToDegrees(2) / Math.cos(latitude * Math.PI / 180); // Adjust longitude delta based on latitude
-    const url = `https://nominatim.openstreetmap.org/search?q=restaurant&format=json&limit=10&bounded=1&viewbox=${longitude - deltaLon},${latitude - deltaLat},${longitude + deltaLon},${latitude + deltaLat}`;
+    //const url = `https://nominatim.openstreetmap.org/search?q=biryani+restaurant&format=json&limit=10&bounded=1&viewbox=${longitude - deltaLon},${latitude - deltaLat},${longitude + deltaLon},${latitude + deltaLat}`;
+
+    const url = `https://nominatim.openstreetmap.org/search?q=biriyani+restaurant&format=json&limit=10&bounded=1&viewbox=${longitude - deltaLon},${latitude - deltaLat},${longitude + deltaLon},${latitude + deltaLat}`;
 
     console.log("Fetching restaurants with URL:", url); // Log the API URL
 

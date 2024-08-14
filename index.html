@@ -10,6 +10,8 @@
         #map {
             height: 400px;
             width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
         }
     </style>
 </head>
@@ -18,13 +20,31 @@
     <div class="header">
         <img src="app-logo.png" alt="B for Biryani" class="logo">
     </div>
+
     <div id="map"></div>
+
     <div class="container" id="restaurant-list">
         <!-- Restaurant cards will be dynamically inserted here -->
+    </div>
+
+    <div class="footer">
+        <button class="footer-btn" id="did-you-know-btn">Fun Facts</button>
+        <button class="footer-btn" id="recipe-of-the-day-btn">Biryani Recipe of the Day</button>
+    </div>
+
+    <div id="popup" class="popup hidden">
+        <div class="popup-content">
+            <p id="popup-text"></p>
+            <p class="disclosure">Disclaimer: These texts are randomly sourced from the internet and may or may not be accurate. They are only provided as a fun element in this app.</p>
+            <button class="popup-close" id="popup-close-btn">Close</button>
+            <button class="popup-share" id="popup-share-btn">Share</button>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="location.js"></script>
     <script src="script.js"></script>
+    <script src="footerscript.js"></script>
+
 </body>
 </html>
