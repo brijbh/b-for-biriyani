@@ -1,125 +1,205 @@
-// script.js
+const cardColors = ["#784e5c", "#43a17f", "#bd69ff", "#fa639a", "#3fb1e5", "#a18dc2"];
+const DEFAULT_LOCATION = { lat: 20.5937, lon: 78.9629, zoom: 5, label: "India" };
+const SEARCH_RADIUS_KM = 2;
+const RESTAURANT_LIMIT = 10;
 
-const cardColors = ['#784e5c', '#43a17f', '#bd69ff', '#fa639a', '#3fb1e5', '#a18dc2'];
+let currentUserLocation = null;
+let userMarker = null;
+const restaurantMarkers = [];
 
-// Function to convert kilometers to degrees
-function kmToDegrees(km) {
-    const earthRadiusKm = 6371;
-    return km / earthRadiusKm * (180 / Math.PI);
-}
+const map = L.map("map").setView([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lon], DEFAULT_LOCATION.zoom);
+const restaurantList = document.getElementById("restaurant-list");
+const statusMessage = document.getElementById("status-message");
 
-// Initialize the map and set a default view
-const map = L.map('map').setView([20.5937, 78.9629], 5); // Default view set to India
-
-// Add OpenStreetMap tile layer to the map
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 
-function updateMapWithLocation(latitude, longitude) {
-    if (latitude && longitude) {
-        // Update the map view to the user's location
-        map.setView([latitude, longitude], 13);
+function kmToDegrees(km) {
+    const earthRadiusKm = 6371;
+    return (km / earthRadiusKm) * (180 / Math.PI);
+}
 
-        // Add a marker to the user's location
-        L.marker([latitude, longitude]).addTo(map)
-            .bindPopup("You are here!")
-            .openPopup();
+function setStatus(message, isError = false) {
+    statusMessage.textContent = message;
+    statusMessage.classList.toggle("is-error", isError);
+}
 
-        // Now, fetch and display restaurants near the user's location
+function clearRestaurants() {
+    restaurantList.innerHTML = "";
+    restaurantMarkers.forEach(marker => map.removeLayer(marker));
+    restaurantMarkers.length = 0;
+}
+
+function updateMapWithLocation(latitude, longitude, errorMessage) {
+    clearRestaurants();
+
+    if (typeof latitude === "number" && typeof longitude === "number") {
+        currentUserLocation = { lat: latitude, lon: longitude };
+        map.setView([latitude, longitude], 14);
+
+        if (userMarker) {
+            userMarker.setLatLng([latitude, longitude]);
+        } else {
+            userMarker = L.marker([latitude, longitude]).addTo(map);
+        }
+
+        userMarker.bindPopup("You are here!").openPopup();
+        setStatus("Showing biriyani spots within about 2 km of your location.");
         fetchNearbyRestaurants(latitude, longitude);
-    } else {
-        console.error("Failed to retrieve user location.");
+        return;
     }
+
+    currentUserLocation = null;
+
+    if (userMarker) {
+        map.removeLayer(userMarker);
+        userMarker = null;
+    }
+
+    map.setView([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lon], DEFAULT_LOCATION.zoom);
+    setStatus(errorMessage || "Location is unavailable. Allow location access to see nearby biriyani places.", true);
 }
 
 function fetchNearbyRestaurants(latitude, longitude) {
-    const deltaLat = kmToDegrees(2); // Convert 2 km to degrees for latitude
-    const deltaLon = kmToDegrees(2) / Math.cos(latitude * Math.PI / 180); // Adjust longitude delta based on latitude
-    //const url = `https://nominatim.openstreetmap.org/search?q=biryani+restaurant&format=json&limit=10&bounded=1&viewbox=${longitude - deltaLon},${latitude - deltaLat},${longitude + deltaLon},${latitude + deltaLat}`;
+    const deltaLat = kmToDegrees(SEARCH_RADIUS_KM);
+    const longitudeDivisor = Math.max(Math.cos((latitude * Math.PI) / 180), 0.01);
+    const deltaLon = kmToDegrees(SEARCH_RADIUS_KM) / longitudeDivisor;
+    const url = `https://nominatim.openstreetmap.org/search?q=biryani+restaurant&format=json&limit=${RESTAURANT_LIMIT}&bounded=1&viewbox=${longitude - deltaLon},${latitude - deltaLat},${longitude + deltaLon},${latitude + deltaLat}`;
 
-    const url = `https://nominatim.openstreetmap.org/search?q=biriyani+restaurant&format=json&limit=10&bounded=1&viewbox=${longitude - deltaLon},${latitude - deltaLat},${longitude + deltaLon},${latitude + deltaLat}`;
-
-    console.log("Fetching restaurants with URL:", url); // Log the API URL
-
-    fetch(url)
+    fetch(url, {
+        headers: {
+            Accept: "application/json"
+        }
+    })
         .then(response => {
             if (!response.ok) {
-                throw new Error(`Network response was not ok: ${response.statusText}`);
+                throw new Error(`Failed to load nearby restaurants (${response.status}).`);
             }
             return response.json();
         })
         .then(results => {
-            console.log("OSM results:", results); // Log the results from the API
-            if (results.length === 0) {
-                console.log("No restaurants found within the specified radius.");
+            const uniqueRestaurants = buildRestaurantList(results, latitude, longitude);
+
+            if (uniqueRestaurants.length === 0) {
+                setStatus("No biriyani-specific results were found in this radius. Try again from a busier area.", true);
+                return;
             }
-            results.forEach(place => {
-                if (place.lat && place.lon) { // Ensure the place has latitude and longitude
-                    const restaurant = {
-                        name: place.display_name.split(",")[0],
-                        distance: calculateDistance(latitude, longitude, parseFloat(place.lat), parseFloat(place.lon)),
-                        address: place.display_name,
-                        hours: 'Hours not available', // OSM Nominatim does not provide hours information
-                        rating: 'Rating not available', // OSM Nominatim does not provide rating information
-                        location: { lat: parseFloat(place.lat), lon: parseFloat(place.lon) }
-                    };
-                    console.log("Creating card for restaurant:", restaurant); // Log each restaurant
-                    createRestaurantCard(restaurant);
-                } else {
-                    console.log("Place does not have valid coordinates:", place); // Log if the place lacks coordinates
-                }
-            });
+
+            uniqueRestaurants.forEach(createRestaurantCard);
+            setStatus(`Found ${uniqueRestaurants.length} biriyani place${uniqueRestaurants.length === 1 ? "" : "s"} nearby.`);
         })
         .catch(error => {
             console.error("Error fetching OSM data:", error);
+            setStatus("Unable to load restaurant data right now. Please try again later.", true);
         });
+}
+
+function buildRestaurantList(results, userLat, userLon) {
+    const seen = new Set();
+
+    return results
+        .filter(place => place.lat && place.lon && place.display_name)
+        .map(place => {
+            const lat = Number.parseFloat(place.lat);
+            const lon = Number.parseFloat(place.lon);
+            const address = place.display_name.trim();
+            const name = address.split(",")[0].trim();
+            const dedupeKey = `${name.toLowerCase()}|${lat.toFixed(4)}|${lon.toFixed(4)}`;
+
+            if (seen.has(dedupeKey)) {
+                return null;
+            }
+
+            seen.add(dedupeKey);
+
+            return {
+                name,
+                distance: calculateDistance(userLat, userLon, lat, lon),
+                address,
+                details: [],
+                source: "Live OpenStreetMap search",
+                location: { lat, lon }
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.distance - b.distance);
 }
 
 function createRestaurantCard(restaurant) {
     const randomColor = cardColors[Math.floor(Math.random() * cardColors.length)];
-    
-    const card = document.createElement('div');
-    card.className = 'card';
+    const card = document.createElement("article");
+    const header = document.createElement("div");
+    const name = document.createElement("span");
+    const distance = document.createElement("span");
+    const address = document.createElement("div");
+    const meta = document.createElement("div");
+    const actions = document.createElement("div");
+    const directionsButton = document.createElement("button");
+    const source = document.createElement("div");
+    const marker = L.marker([restaurant.location.lat, restaurant.location.lon]).addTo(map);
+
+    restaurantMarkers.push(marker);
+
+    marker.bindPopup(`<strong>${restaurant.name}</strong><br>${restaurant.distance.toFixed(2)} km away`);
+
+    card.className = "card";
     card.style.backgroundColor = randomColor;
-    
-    const lat = restaurant.location.lat;
-    const lng = restaurant.location.lon;
-    console.log(`Creating card for ${restaurant.name} with coordinates: ${lat}, ${lng}`);
-    
-    card.innerHTML = `
-        <div class="card-header">
-            <span class="restaurant-name">${restaurant.name}</span>
-            <span class="distance">${restaurant.distance.toFixed(2)} km</span>
-        </div>
-        <div class="address">${restaurant.address}</div>
-        <div class="hours"><b>Hours</b>: ${restaurant.hours}</div>
-        <div class="review"><b>Google Review</b>: ${restaurant.rating}</div>
-        <button class="directions-btn" onclick="getDirections(${lat}, ${lng})">Directions</button>
-    `;
-    
-    document.getElementById('restaurant-list').appendChild(card);
+
+    header.className = "card-header";
+    name.className = "restaurant-name";
+    distance.className = "distance";
+    address.className = "address";
+    meta.className = "meta";
+    actions.className = "card-actions";
+    source.className = "source";
+    directionsButton.className = "directions-btn";
+    directionsButton.type = "button";
+
+    name.textContent = restaurant.name;
+    distance.textContent = `${restaurant.distance.toFixed(2)} km`;
+    address.textContent = restaurant.address;
+    meta.textContent = restaurant.details.length > 0 ? restaurant.details.join(" • ") : "Map result only. Hours and ratings are not available from this data source.";
+    source.textContent = restaurant.source;
+    directionsButton.textContent = "Directions";
+
+    directionsButton.addEventListener("click", () => {
+        getDirections(restaurant.location.lat, restaurant.location.lon);
+    });
+
+    header.append(name, distance);
+    actions.appendChild(directionsButton);
+    card.append(header, address, meta, source, actions);
+    restaurantList.appendChild(card);
 }
 
-function getDirections(lat, lon) {
-    const url = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${lat},${lon};${lat},${lon}`;
-    console.log(`Opening directions to ${lat}, ${lon}`);
-    window.open(url, '_blank');
+function getDirections(destinationLat, destinationLon) {
+    const destination = `${destinationLat},${destinationLon}`;
+
+    if (currentUserLocation) {
+        const origin = `${currentUserLocation.lat},${currentUserLocation.lon}`;
+        const url = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${origin};${destination}`;
+        window.open(url, "_blank", "noopener");
+        return;
+    }
+
+    const url = `https://www.openstreetmap.org/?mlat=${destinationLat}&mlon=${destinationLon}#map=16/${destinationLat}/${destinationLon}`;
+    window.open(url, "_blank", "noopener");
 }
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Radius of the Earth in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-        0.5 - Math.cos(dLat) / 2 + 
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+        0.5 - Math.cos(dLat) / 2 +
+        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
         (1 - Math.cos(dLon)) / 2;
 
     return R * 2 * Math.asin(Math.sqrt(a));
 }
 
-// Initialize the app
-window.onload = () => {
+window.addEventListener("load", () => {
+    setStatus("Requesting your location to find nearby biriyani places...");
     getUserLocation(updateMapWithLocation);
-};
+});

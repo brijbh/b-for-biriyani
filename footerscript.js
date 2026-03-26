@@ -1,49 +1,94 @@
-document.addEventListener('DOMContentLoaded', function() {
-    const didYouKnowBtn = document.getElementById('did-you-know-btn');
-    const recipeOfTheDayBtn = document.getElementById('recipe-of-the-day-btn');
-    const popup = document.getElementById('popup');
-    const popupText = document.getElementById('popup-text');
-    const popupCloseBtn = document.getElementById('popup-close-btn');
+document.addEventListener("DOMContentLoaded", () => {
+    const didYouKnowBtn = document.getElementById("did-you-know-btn");
+    const recipeOfTheDayBtn = document.getElementById("recipe-of-the-day-btn");
+    const popup = document.getElementById("popup");
+    const popupText = document.getElementById("popup-text");
+    const popupCloseBtn = document.getElementById("popup-close-btn");
+    const popupShareBtn = document.getElementById("popup-share-btn");
 
     let didYouKnowFacts = [];
     let biryaniRecipes = [];
+    let currentPopupContent = "";
 
-    // Fetch Did You Know Facts
-    fetch('didYouKnow.json')
-        .then(response => response.json())
-        .then(data => {
-            didYouKnowFacts = data.facts;
+    fetch("didYouKnow.json")
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to load facts (${response.status}).`);
+            }
+            return response.json();
         })
-        .catch(error => console.error('Error loading Did You Know facts:', error));
+        .then(data => {
+            didYouKnowFacts = Array.isArray(data.facts) ? data.facts : [];
+        })
+        .catch(error => console.error("Error loading Did You Know facts:", error));
 
-    // Fetch Biryani Recipes
-    fetch('biryaniRecipes.json')
-        .then(response => response.json())
-        .then(data => {
-            biryaniRecipes = data.recipes;
+    fetch("biryaniRecipes.json")
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to load recipes (${response.status}).`);
+            }
+            return response.json();
         })
-        .catch(error => console.error('Error loading Biryani recipes:', error));
+        .then(data => {
+            biryaniRecipes = Array.isArray(data.recipes) ? data.recipes : [];
+        })
+        .catch(error => console.error("Error loading Biryani recipes:", error));
 
     function showPopup(content) {
-        popupText.innerText = content;
-        popup.classList.remove('hidden');
+        currentPopupContent = content;
+        popupText.textContent = content;
+        popup.classList.remove("hidden");
     }
 
-    didYouKnowBtn.addEventListener('click', function() {
+    function closePopup() {
+        popup.classList.add("hidden");
+    }
+
+    didYouKnowBtn.addEventListener("click", () => {
         if (didYouKnowFacts.length > 0) {
             const randomFact = didYouKnowFacts[Math.floor(Math.random() * didYouKnowFacts.length)];
             showPopup(randomFact);
         }
     });
 
-    recipeOfTheDayBtn.addEventListener('click', function() {
+    recipeOfTheDayBtn.addEventListener("click", () => {
         if (biryaniRecipes.length > 0) {
             const randomRecipe = biryaniRecipes[Math.floor(Math.random() * biryaniRecipes.length)];
             showPopup(randomRecipe);
         }
     });
 
-    popupCloseBtn.addEventListener('click', function() {
-        popup.classList.add('hidden');
+    popupCloseBtn.addEventListener("click", closePopup);
+
+    popupShareBtn.addEventListener("click", async () => {
+        if (!currentPopupContent) {
+            return;
+        }
+
+        try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: "B for Biriyani",
+                    text: currentPopupContent
+                });
+                return;
+            }
+
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(currentPopupContent);
+                popupShareBtn.textContent = "Copied";
+                window.setTimeout(() => {
+                    popupShareBtn.textContent = "Share";
+                }, 1500);
+            }
+        } catch (error) {
+            console.error("Error sharing popup content:", error);
+        }
+    });
+
+    popup.addEventListener("click", event => {
+        if (event.target === popup) {
+            closePopup();
+        }
     });
 });

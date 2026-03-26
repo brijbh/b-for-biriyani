@@ -3,23 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Biryani Near Me</title>
+    <title>B for Biriyani</title>
+    <meta name="description" content="Find nearby biriyani spots, see distance and directions, and enjoy quick biriyani facts and recipes.">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <style>
-        #map {
-            height: 400px;
-            width: 100%;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-    </style>
 </head>
 <body>
 
     <div class="header">
         <img src="app-logo.png" alt="B for Biryani" class="logo">
     </div>
+
+    <p class="status-message" id="status-message" aria-live="polite"></p>
 
     <div id="map"></div>
 
@@ -35,7 +30,7 @@
     <div id="popup" class="popup hidden">
         <div class="popup-content">
             <p id="popup-text"></p>
-            <p class="disclosure">Disclaimer: These texts are randomly sourced from the internet and may or may not be accurate. They are only provided as a fun element in this app.</p>
+            <p class="disclosure">Disclaimer: These facts and recipes are lightweight fun content for the app and may need manual verification.</p>
             <button class="popup-close" id="popup-close-btn">Close</button>
             <button class="popup-share" id="popup-share-btn">Share</button>
         </div>

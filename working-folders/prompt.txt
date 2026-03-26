@@ -35,4 +35,4 @@ Reviews							Directions Button
 
 
 
-map api key: AIzaSyBlO7OBZG1i3r2mly6-tqoo6Dh3km-iuMQ
+map api key: REDACTED
