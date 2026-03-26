@@ -1,7 +1,20 @@
 const cardColors = ["#784e5c", "#43a17f", "#bd69ff", "#fa639a", "#3fb1e5", "#a18dc2"];
-const DEFAULT_LOCATION = { lat: 20.5937, lon: 78.9629, zoom: 5, label: "India" };
+const DEFAULT_LOCATION = { lat: 20.5937, lon: 78.9629, zoom: 5 };
 const SEARCH_RADIUS_KM = 2;
+const SEARCH_RADIUS_METERS = SEARCH_RADIUS_KM * 1000;
 const RESTAURANT_LIMIT = 10;
+const BIRYANI_KEYWORDS = [
+    "biryani",
+    "biriyani",
+    "biryani house",
+    "biryani point",
+    "biryani center",
+    "biryani centre"
+];
+const OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter"
+];
 
 let currentUserLocation = null;
 let userMarker = null;
@@ -14,11 +27,6 @@ const statusMessage = document.getElementById("status-message");
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
-
-function kmToDegrees(km) {
-    const earthRadiusKm = 6371;
-    return (km / earthRadiusKm) * (180 / Math.PI);
-}
 
 function setStatus(message, isError = false) {
     statusMessage.textContent = message;
@@ -45,7 +53,7 @@ function updateMapWithLocation(latitude, longitude, errorMessage) {
         }
 
         userMarker.bindPopup("You are here!").openPopup();
-        setStatus("Showing biriyani spots within about 2 km of your location.");
+        setStatus("Searching nearby biriyani places...");
         fetchNearbyRestaurants(latitude, longitude);
         return;
     }
@@ -61,69 +69,199 @@ function updateMapWithLocation(latitude, longitude, errorMessage) {
     setStatus(errorMessage || "Location is unavailable. Allow location access to see nearby biriyani places.", true);
 }
 
-function fetchNearbyRestaurants(latitude, longitude) {
-    const deltaLat = kmToDegrees(SEARCH_RADIUS_KM);
-    const longitudeDivisor = Math.max(Math.cos((latitude * Math.PI) / 180), 0.01);
-    const deltaLon = kmToDegrees(SEARCH_RADIUS_KM) / longitudeDivisor;
-    const url = `https://nominatim.openstreetmap.org/search?q=biryani+restaurant&format=json&limit=${RESTAURANT_LIMIT}&bounded=1&viewbox=${longitude - deltaLon},${latitude - deltaLat},${longitude + deltaLon},${latitude + deltaLat}`;
+async function fetchNearbyRestaurants(latitude, longitude) {
+    const overpassQuery = buildOverpassQuery(latitude, longitude, SEARCH_RADIUS_METERS);
 
-    fetch(url, {
-        headers: {
-            Accept: "application/json"
+    try {
+        const elements = await fetchOverpassElements(overpassQuery);
+        const restaurantResults = buildRestaurantList(elements, latitude, longitude);
+        const biryaniResults = restaurantResults.filter(restaurant => restaurant.isBiryaniMatch);
+        const finalResults = (biryaniResults.length > 0 ? biryaniResults : restaurantResults).slice(0, RESTAURANT_LIMIT);
+
+        if (finalResults.length === 0) {
+            setStatus("No nearby food places were returned from OpenStreetMap in this area right now.", true);
+            return;
         }
-    })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`Failed to load nearby restaurants (${response.status}).`);
-            }
-            return response.json();
-        })
-        .then(results => {
-            const uniqueRestaurants = buildRestaurantList(results, latitude, longitude);
 
-            if (uniqueRestaurants.length === 0) {
-                setStatus("No biriyani-specific results were found in this radius. Try again from a busier area.", true);
-                return;
-            }
+        finalResults.forEach(createRestaurantCard);
 
-            uniqueRestaurants.forEach(createRestaurantCard);
-            setStatus(`Found ${uniqueRestaurants.length} biriyani place${uniqueRestaurants.length === 1 ? "" : "s"} nearby.`);
-        })
-        .catch(error => {
-            console.error("Error fetching OSM data:", error);
-            setStatus("Unable to load restaurant data right now. Please try again later.", true);
-        });
+        if (biryaniResults.length > 0) {
+            setStatus(`Found ${finalResults.length} biriyani place${finalResults.length === 1 ? "" : "s"} nearby.`);
+        } else {
+            setStatus("No explicit biriyani tags were found nearby, so showing the closest restaurant results instead.", false);
+        }
+    } catch (error) {
+        console.error("Error fetching Overpass data:", error);
+        setStatus("Unable to load nearby places right now. Please try again in a moment.", true);
+    }
 }
 
-function buildRestaurantList(results, userLat, userLon) {
+function buildOverpassQuery(latitude, longitude, radiusMeters) {
+    return `
+[out:json][timeout:25];
+(
+  node["amenity"~"^(restaurant|fast_food|cafe)$"](around:${radiusMeters},${latitude},${longitude});
+  way["amenity"~"^(restaurant|fast_food|cafe)$"](around:${radiusMeters},${latitude},${longitude});
+  relation["amenity"~"^(restaurant|fast_food|cafe)$"](around:${radiusMeters},${latitude},${longitude});
+);
+out center tags;
+`;
+}
+
+async function fetchOverpassElements(query) {
+    let lastError = null;
+
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+        try {
+            const response = await fetch(endpoint, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "text/plain;charset=UTF-8",
+                    Accept: "application/json"
+                },
+                body: query
+            });
+
+            if (!response.ok) {
+                throw new Error(`Overpass request failed (${response.status}) from ${endpoint}.`);
+            }
+
+            const data = await response.json();
+            return Array.isArray(data.elements) ? data.elements : [];
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError || new Error("All Overpass endpoints failed.");
+}
+
+function buildRestaurantList(elements, userLat, userLon) {
     const seen = new Set();
 
-    return results
-        .filter(place => place.lat && place.lon && place.display_name)
-        .map(place => {
-            const lat = Number.parseFloat(place.lat);
-            const lon = Number.parseFloat(place.lon);
-            const address = place.display_name.trim();
-            const name = address.split(",")[0].trim();
-            const dedupeKey = `${name.toLowerCase()}|${lat.toFixed(4)}|${lon.toFixed(4)}`;
+    return elements
+        .map(element => normalizeRestaurant(element, userLat, userLon))
+        .filter(Boolean)
+        .filter(restaurant => {
+            const dedupeKey = `${restaurant.name.toLowerCase()}|${restaurant.location.lat.toFixed(4)}|${restaurant.location.lon.toFixed(4)}`;
 
             if (seen.has(dedupeKey)) {
-                return null;
+                return false;
             }
 
             seen.add(dedupeKey);
-
-            return {
-                name,
-                distance: calculateDistance(userLat, userLon, lat, lon),
-                address,
-                details: [],
-                source: "Live OpenStreetMap search",
-                location: { lat, lon }
-            };
+            return true;
         })
+        .sort((a, b) => {
+            if (b.matchScore !== a.matchScore) {
+                return b.matchScore - a.matchScore;
+            }
+
+            return a.distance - b.distance;
+        });
+}
+
+function normalizeRestaurant(element, userLat, userLon) {
+    const tags = element.tags || {};
+    const coordinates = getElementCoordinates(element);
+
+    if (!coordinates) {
+        return null;
+    }
+
+    const name = getRestaurantName(tags);
+    const address = formatAddress(tags, coordinates);
+    const cuisine = tags.cuisine ? formatCuisine(tags.cuisine) : null;
+    const details = [];
+
+    if (cuisine) {
+        details.push(`Cuisine: ${cuisine}`);
+    }
+
+    if (tags["opening_hours"]) {
+        details.push(`Hours: ${tags["opening_hours"]}`);
+    }
+
+    const searchBlob = [
+        name,
+        tags.cuisine,
+        tags.description,
+        tags["addr:street"],
+        tags.brand,
+        tags.branch
+    ]
         .filter(Boolean)
-        .sort((a, b) => a.distance - b.distance);
+        .join(" ")
+        .toLowerCase();
+
+    const matchScore = scoreBiryaniMatch(searchBlob);
+
+    return {
+        name,
+        distance: calculateDistance(userLat, userLon, coordinates.lat, coordinates.lon),
+        address,
+        details,
+        source: "OpenStreetMap nearby places",
+        isBiryaniMatch: matchScore > 0,
+        matchScore,
+        location: coordinates
+    };
+}
+
+function getElementCoordinates(element) {
+    if (typeof element.lat === "number" && typeof element.lon === "number") {
+        return { lat: element.lat, lon: element.lon };
+    }
+
+    if (element.center && typeof element.center.lat === "number" && typeof element.center.lon === "number") {
+        return { lat: element.center.lat, lon: element.center.lon };
+    }
+
+    return null;
+}
+
+function getRestaurantName(tags) {
+    return tags.name || tags.brand || tags.branch || "Unnamed restaurant";
+}
+
+function formatCuisine(cuisineValue) {
+    return cuisineValue
+        .split(";")
+        .map(item => item.trim())
+        .filter(Boolean)
+        .map(item => item.charAt(0).toUpperCase() + item.slice(1))
+        .join(", ");
+}
+
+function formatAddress(tags, coordinates) {
+    const addressParts = [
+        tags["addr:housenumber"],
+        tags["addr:street"],
+        tags["addr:suburb"],
+        tags["addr:city"]
+    ].filter(Boolean);
+
+    if (addressParts.length > 0) {
+        return addressParts.join(", ");
+    }
+
+    if (tags["addr:full"]) {
+        return tags["addr:full"];
+    }
+
+    return `Map location near ${coordinates.lat.toFixed(5)}, ${coordinates.lon.toFixed(5)}`;
+}
+
+function scoreBiryaniMatch(searchBlob) {
+    let score = 0;
+
+    for (const keyword of BIRYANI_KEYWORDS) {
+        if (searchBlob.includes(keyword)) {
+            score += keyword === "biryani" || keyword === "biriyani" ? 3 : 2;
+        }
+    }
+
+    return score;
 }
 
 function createRestaurantCard(restaurant) {
@@ -140,7 +278,6 @@ function createRestaurantCard(restaurant) {
     const marker = L.marker([restaurant.location.lat, restaurant.location.lon]).addTo(map);
 
     restaurantMarkers.push(marker);
-
     marker.bindPopup(`<strong>${restaurant.name}</strong><br>${restaurant.distance.toFixed(2)} km away`);
 
     card.className = "card";
@@ -159,7 +296,7 @@ function createRestaurantCard(restaurant) {
     name.textContent = restaurant.name;
     distance.textContent = `${restaurant.distance.toFixed(2)} km`;
     address.textContent = restaurant.address;
-    meta.textContent = restaurant.details.length > 0 ? restaurant.details.join(" • ") : "Map result only. Hours and ratings are not available from this data source.";
+    meta.textContent = restaurant.details.length > 0 ? restaurant.details.join(" • ") : "Nearby map listing.";
     source.textContent = restaurant.source;
     directionsButton.textContent = "Directions";
 
