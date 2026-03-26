@@ -11,6 +11,13 @@ const BIRYANI_KEYWORDS = [
     "biryani center",
     "biryani centre"
 ];
+const BIRYANI_CUISINES = [
+    "indian",
+    "pakistani",
+    "bangladeshi",
+    "hyderabadi",
+    "mughlai"
+];
 const OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter"
@@ -76,10 +83,11 @@ async function fetchNearbyRestaurants(latitude, longitude) {
         const elements = await fetchOverpassElements(overpassQuery);
         const restaurantResults = buildRestaurantList(elements, latitude, longitude);
         const biryaniResults = restaurantResults.filter(restaurant => restaurant.isBiryaniMatch);
-        const finalResults = (biryaniResults.length > 0 ? biryaniResults : restaurantResults).slice(0, RESTAURANT_LIMIT);
+        const cuisineFallbackResults = restaurantResults.filter(restaurant => restaurant.isLikelyBiryaniPlace);
+        const finalResults = (biryaniResults.length > 0 ? biryaniResults : cuisineFallbackResults).slice(0, RESTAURANT_LIMIT);
 
         if (finalResults.length === 0) {
-            setStatus("No nearby food places were returned from OpenStreetMap in this area right now.", true);
+            setStatus("No clearly relevant biriyani places were found in nearby OpenStreetMap data.", true);
             return;
         }
 
@@ -88,7 +96,7 @@ async function fetchNearbyRestaurants(latitude, longitude) {
         if (biryaniResults.length > 0) {
             setStatus(`Found ${finalResults.length} biriyani place${finalResults.length === 1 ? "" : "s"} nearby.`);
         } else {
-            setStatus("No explicit biriyani tags were found nearby, so showing the closest restaurant results instead.", false);
+            setStatus("No explicit biriyani tags were found nearby, so showing likely Indian or South Asian places instead.", false);
         }
     } catch (error) {
         console.error("Error fetching Overpass data:", error);
@@ -100,9 +108,9 @@ function buildOverpassQuery(latitude, longitude, radiusMeters) {
     return `
 [out:json][timeout:25];
 (
-  node["amenity"~"^(restaurant|fast_food|cafe)$"](around:${radiusMeters},${latitude},${longitude});
-  way["amenity"~"^(restaurant|fast_food|cafe)$"](around:${radiusMeters},${latitude},${longitude});
-  relation["amenity"~"^(restaurant|fast_food|cafe)$"](around:${radiusMeters},${latitude},${longitude});
+  node["amenity"~"^(restaurant|fast_food)$"](around:${radiusMeters},${latitude},${longitude});
+  way["amenity"~"^(restaurant|fast_food)$"](around:${radiusMeters},${latitude},${longitude});
+  relation["amenity"~"^(restaurant|fast_food)$"](around:${radiusMeters},${latitude},${longitude});
 );
 out center tags;
 `;
@@ -157,6 +165,10 @@ function buildRestaurantList(elements, userLat, userLon) {
                 return b.matchScore - a.matchScore;
             }
 
+            if (b.cuisineScore !== a.cuisineScore) {
+                return b.cuisineScore - a.cuisineScore;
+            }
+
             return a.distance - b.distance;
         });
 }
@@ -195,6 +207,7 @@ function normalizeRestaurant(element, userLat, userLon) {
         .toLowerCase();
 
     const matchScore = scoreBiryaniMatch(searchBlob);
+    const cuisineScore = scoreCuisineMatch(tags.cuisine || "");
 
     return {
         name,
@@ -203,7 +216,9 @@ function normalizeRestaurant(element, userLat, userLon) {
         details,
         source: "OpenStreetMap nearby places",
         isBiryaniMatch: matchScore > 0,
+        isLikelyBiryaniPlace: matchScore > 0 || cuisineScore > 0,
         matchScore,
+        cuisineScore,
         location: coordinates
     };
 }
@@ -258,6 +273,19 @@ function scoreBiryaniMatch(searchBlob) {
     for (const keyword of BIRYANI_KEYWORDS) {
         if (searchBlob.includes(keyword)) {
             score += keyword === "biryani" || keyword === "biriyani" ? 3 : 2;
+        }
+    }
+
+    return score;
+}
+
+function scoreCuisineMatch(cuisineValue) {
+    const normalizedCuisine = cuisineValue.toLowerCase();
+    let score = 0;
+
+    for (const cuisine of BIRYANI_CUISINES) {
+        if (normalizedCuisine.includes(cuisine)) {
+            score += 2;
         }
     }
 
