@@ -1,336 +1,148 @@
-const cardColors = ["#784e5c", "#43a17f", "#bd69ff", "#fa639a", "#3fb1e5", "#a18dc2"];
-const DEFAULT_LOCATION = { lat: 20.5937, lon: 78.9629, zoom: 5 };
-const SEARCH_RADIUS_KM = 2;
-const SEARCH_RADIUS_METERS = SEARCH_RADIUS_KM * 1000;
-const RESTAURANT_LIMIT = 10;
-const BIRYANI_KEYWORDS = [
-    "biryani",
-    "biriyani",
-    "biryani house",
-    "biryani point",
-    "biryani center",
-    "biryani centre"
-];
-const BIRYANI_CUISINES = [
-    "indian",
-    "pakistani",
-    "bangladeshi",
-    "hyderabadi",
-    "mughlai"
-];
-const OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter"
-];
+const DEFAULT_LOCATION = { lat: 20.5937, lng: 78.9629 };
+const DEFAULT_ZOOM = 5;
+const SEARCH_RADIUS_METERS = 2000;
+const RESULT_LIMIT = 10;
+const DEFAULT_CONFIG = {
+    apiBaseUrl: "http://localhost:8787",
+    googleMapsBrowserKey: "",
+    googleMapsMapId: "",
+    searchRadiusMeters: SEARCH_RADIUS_METERS
+};
 
+let map;
+let userMarker;
+let infoWindow;
 let currentUserLocation = null;
-let userMarker = null;
-const restaurantMarkers = [];
+const placeMarkers = [];
 
-const map = L.map("map").setView([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lon], DEFAULT_LOCATION.zoom);
+const appConfig = Object.assign({}, DEFAULT_CONFIG, window.APP_CONFIG || {});
 const restaurantList = document.getElementById("restaurant-list");
 const statusMessage = document.getElementById("status-message");
-
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-}).addTo(map);
 
 function setStatus(message, isError = false) {
     statusMessage.textContent = message;
     statusMessage.classList.toggle("is-error", isError);
 }
 
-function clearRestaurants() {
+function clearRestaurantList() {
     restaurantList.innerHTML = "";
-    restaurantMarkers.forEach(marker => map.removeLayer(marker));
-    restaurantMarkers.length = 0;
+}
+
+function clearPlaceMarkers() {
+    placeMarkers.forEach(marker => marker.map = null);
+    placeMarkers.length = 0;
 }
 
 function updateMapWithLocation(latitude, longitude, errorMessage) {
-    clearRestaurants();
+    clearRestaurantList();
+    clearPlaceMarkers();
 
-    if (typeof latitude === "number" && typeof longitude === "number") {
-        currentUserLocation = { lat: latitude, lon: longitude };
-        map.setView([latitude, longitude], 14);
-
-        if (userMarker) {
-            userMarker.setLatLng([latitude, longitude]);
-        } else {
-            userMarker = L.marker([latitude, longitude]).addTo(map);
-        }
-
-        userMarker.bindPopup("You are here!").openPopup();
-        setStatus("Searching nearby biriyani places...");
-        fetchNearbyRestaurants(latitude, longitude);
+    if (typeof latitude !== "number" || typeof longitude !== "number") {
+        currentUserLocation = null;
+        setStatus(errorMessage || "Location is unavailable. Allow location access to search nearby biriyani places.", true);
         return;
     }
 
-    currentUserLocation = null;
-
-    if (userMarker) {
-        map.removeLayer(userMarker);
-        userMarker = null;
-    }
-
-    map.setView([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lon], DEFAULT_LOCATION.zoom);
-    setStatus(errorMessage || "Location is unavailable. Allow location access to see nearby biriyani places.", true);
+    currentUserLocation = { lat: latitude, lng: longitude };
+    centerMap(latitude, longitude, 14);
+    updateUserMarker(latitude, longitude);
+    setStatus("Searching Google Places for nearby biriyani restaurants...");
+    fetchNearbyBiriyaniPlaces(latitude, longitude);
 }
 
-async function fetchNearbyRestaurants(latitude, longitude) {
-    const overpassQuery = buildOverpassQuery(latitude, longitude, SEARCH_RADIUS_METERS);
+async function fetchNearbyBiriyaniPlaces(latitude, longitude) {
+    const url = new URL("/api/search", appConfig.apiBaseUrl);
+
+    url.searchParams.set("lat", latitude.toString());
+    url.searchParams.set("lng", longitude.toString());
+    url.searchParams.set("radius", String(appConfig.searchRadiusMeters || SEARCH_RADIUS_METERS));
+    url.searchParams.set("limit", String(RESULT_LIMIT));
 
     try {
-        const elements = await fetchOverpassElements(overpassQuery);
-        const restaurantResults = buildRestaurantList(elements, latitude, longitude);
-        const biryaniResults = restaurantResults.filter(restaurant => restaurant.isBiryaniMatch);
-        const cuisineFallbackResults = restaurantResults.filter(restaurant => restaurant.isLikelyBiryaniPlace);
-        const finalResults = (biryaniResults.length > 0 ? biryaniResults : cuisineFallbackResults).slice(0, RESTAURANT_LIMIT);
+        const response = await fetch(url.toString(), {
+            headers: {
+                Accept: "application/json"
+            }
+        });
 
-        if (finalResults.length === 0) {
-            setStatus("No clearly relevant biriyani places were found in nearby OpenStreetMap data.", true);
+        if (!response.ok) {
+            throw new Error(`Search API failed (${response.status}).`);
+        }
+
+        const payload = await response.json();
+        const places = Array.isArray(payload.places) ? payload.places : [];
+
+        if (places.length === 0) {
+            setStatus("No biriyani-specific Google Places matches were found in this radius.", true);
             return;
         }
 
-        finalResults.forEach(createRestaurantCard);
-
-        if (biryaniResults.length > 0) {
-            setStatus(`Found ${finalResults.length} biriyani place${finalResults.length === 1 ? "" : "s"} nearby.`);
-        } else {
-            setStatus("No explicit biriyani tags were found nearby, so showing likely Indian or South Asian places instead.", false);
-        }
+        renderPlaces(places);
+        setStatus(`Found ${places.length} biriyani place${places.length === 1 ? "" : "s"} nearby.`);
     } catch (error) {
-        console.error("Error fetching Overpass data:", error);
-        setStatus("Unable to load nearby places right now. Please try again in a moment.", true);
+        console.error("Error fetching biriyani places:", error);
+        setStatus("Unable to load Google Places results right now. Check the backend URL and API keys.", true);
     }
 }
 
-function buildOverpassQuery(latitude, longitude, radiusMeters) {
-    return `
-[out:json][timeout:25];
-(
-  node["amenity"~"^(restaurant|fast_food)$"](around:${radiusMeters},${latitude},${longitude});
-  way["amenity"~"^(restaurant|fast_food)$"](around:${radiusMeters},${latitude},${longitude});
-  relation["amenity"~"^(restaurant|fast_food)$"](around:${radiusMeters},${latitude},${longitude});
-);
-out center tags;
-`;
+function renderPlaces(places) {
+    clearRestaurantList();
+    clearPlaceMarkers();
+
+    places.forEach(place => {
+        createRestaurantCard(place);
+        addPlaceMarker(place);
+    });
 }
 
-async function fetchOverpassElements(query) {
-    let lastError = null;
-
-    for (const endpoint of OVERPASS_ENDPOINTS) {
-        try {
-            const response = await fetch(endpoint, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "text/plain;charset=UTF-8",
-                    Accept: "application/json"
-                },
-                body: query
-            });
-
-            if (!response.ok) {
-                throw new Error(`Overpass request failed (${response.status}) from ${endpoint}.`);
-            }
-
-            const data = await response.json();
-            return Array.isArray(data.elements) ? data.elements : [];
-        } catch (error) {
-            lastError = error;
-        }
-    }
-
-    throw lastError || new Error("All Overpass endpoints failed.");
-}
-
-function buildRestaurantList(elements, userLat, userLon) {
-    const seen = new Set();
-
-    return elements
-        .map(element => normalizeRestaurant(element, userLat, userLon))
-        .filter(Boolean)
-        .filter(restaurant => {
-            const dedupeKey = `${restaurant.name.toLowerCase()}|${restaurant.location.lat.toFixed(4)}|${restaurant.location.lon.toFixed(4)}`;
-
-            if (seen.has(dedupeKey)) {
-                return false;
-            }
-
-            seen.add(dedupeKey);
-            return true;
-        })
-        .sort((a, b) => {
-            if (b.matchScore !== a.matchScore) {
-                return b.matchScore - a.matchScore;
-            }
-
-            if (b.cuisineScore !== a.cuisineScore) {
-                return b.cuisineScore - a.cuisineScore;
-            }
-
-            return a.distance - b.distance;
-        });
-}
-
-function normalizeRestaurant(element, userLat, userLon) {
-    const tags = element.tags || {};
-    const coordinates = getElementCoordinates(element);
-
-    if (!coordinates) {
-        return null;
-    }
-
-    const name = getRestaurantName(tags);
-    const address = formatAddress(tags, coordinates);
-    const cuisine = tags.cuisine ? formatCuisine(tags.cuisine) : null;
-    const details = [];
-
-    if (cuisine) {
-        details.push(`Cuisine: ${cuisine}`);
-    }
-
-    if (tags["opening_hours"]) {
-        details.push(`Hours: ${tags["opening_hours"]}`);
-    }
-
-    const searchBlob = [
-        name,
-        tags.cuisine,
-        tags.description,
-        tags["addr:street"],
-        tags.brand,
-        tags.branch
-    ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-    const matchScore = scoreBiryaniMatch(searchBlob);
-    const cuisineScore = scoreCuisineMatch(tags.cuisine || "");
-
-    return {
-        name,
-        distance: calculateDistance(userLat, userLon, coordinates.lat, coordinates.lon),
-        address,
-        details,
-        source: "OpenStreetMap nearby places",
-        isBiryaniMatch: matchScore > 0,
-        isLikelyBiryaniPlace: matchScore > 0 || cuisineScore > 0,
-        matchScore,
-        cuisineScore,
-        location: coordinates
-    };
-}
-
-function getElementCoordinates(element) {
-    if (typeof element.lat === "number" && typeof element.lon === "number") {
-        return { lat: element.lat, lon: element.lon };
-    }
-
-    if (element.center && typeof element.center.lat === "number" && typeof element.center.lon === "number") {
-        return { lat: element.center.lat, lon: element.center.lon };
-    }
-
-    return null;
-}
-
-function getRestaurantName(tags) {
-    return tags.name || tags.brand || tags.branch || "Unnamed restaurant";
-}
-
-function formatCuisine(cuisineValue) {
-    return cuisineValue
-        .split(";")
-        .map(item => item.trim())
-        .filter(Boolean)
-        .map(item => item.charAt(0).toUpperCase() + item.slice(1))
-        .join(", ");
-}
-
-function formatAddress(tags, coordinates) {
-    const addressParts = [
-        tags["addr:housenumber"],
-        tags["addr:street"],
-        tags["addr:suburb"],
-        tags["addr:city"]
-    ].filter(Boolean);
-
-    if (addressParts.length > 0) {
-        return addressParts.join(", ");
-    }
-
-    if (tags["addr:full"]) {
-        return tags["addr:full"];
-    }
-
-    return `Map location near ${coordinates.lat.toFixed(5)}, ${coordinates.lon.toFixed(5)}`;
-}
-
-function scoreBiryaniMatch(searchBlob) {
-    let score = 0;
-
-    for (const keyword of BIRYANI_KEYWORDS) {
-        if (searchBlob.includes(keyword)) {
-            score += keyword === "biryani" || keyword === "biriyani" ? 3 : 2;
-        }
-    }
-
-    return score;
-}
-
-function scoreCuisineMatch(cuisineValue) {
-    const normalizedCuisine = cuisineValue.toLowerCase();
-    let score = 0;
-
-    for (const cuisine of BIRYANI_CUISINES) {
-        if (normalizedCuisine.includes(cuisine)) {
-            score += 2;
-        }
-    }
-
-    return score;
-}
-
-function createRestaurantCard(restaurant) {
-    const randomColor = cardColors[Math.floor(Math.random() * cardColors.length)];
+function createRestaurantCard(place) {
     const card = document.createElement("article");
     const header = document.createElement("div");
     const name = document.createElement("span");
     const distance = document.createElement("span");
     const address = document.createElement("div");
     const meta = document.createElement("div");
+    const source = document.createElement("div");
     const actions = document.createElement("div");
     const directionsButton = document.createElement("button");
-    const source = document.createElement("div");
-    const marker = L.marker([restaurant.location.lat, restaurant.location.lon]).addTo(map);
-
-    restaurantMarkers.push(marker);
-    marker.bindPopup(`<strong>${restaurant.name}</strong><br>${restaurant.distance.toFixed(2)} km away`);
 
     card.className = "card";
-    card.style.backgroundColor = randomColor;
+    card.style.backgroundColor = getCardColor(place.name);
 
     header.className = "card-header";
     name.className = "restaurant-name";
     distance.className = "distance";
     address.className = "address";
     meta.className = "meta";
-    actions.className = "card-actions";
     source.className = "source";
+    actions.className = "card-actions";
     directionsButton.className = "directions-btn";
     directionsButton.type = "button";
 
-    name.textContent = restaurant.name;
-    distance.textContent = `${restaurant.distance.toFixed(2)} km`;
-    address.textContent = restaurant.address;
-    meta.textContent = restaurant.details.length > 0 ? restaurant.details.join(" • ") : "Nearby map listing.";
-    source.textContent = restaurant.source;
-    directionsButton.textContent = "Directions";
+    name.textContent = place.name;
+    distance.textContent = `${place.distanceKm.toFixed(2)} km`;
+    address.textContent = place.address;
 
-    directionsButton.addEventListener("click", () => {
-        getDirections(restaurant.location.lat, restaurant.location.lon);
-    });
+    const metaParts = [];
+    if (place.primaryTypeDisplayName) {
+        metaParts.push(place.primaryTypeDisplayName);
+    }
+    if (place.rating) {
+        metaParts.push(`Rating ${place.rating.toFixed(1)}`);
+    }
+    if (place.userRatingCount) {
+        metaParts.push(`${place.userRatingCount} reviews`);
+    }
+    if (place.openNow === true) {
+        metaParts.push("Open now");
+    } else if (place.openNow === false) {
+        metaParts.push("Closed now");
+    }
+    meta.textContent = metaParts.length > 0 ? metaParts.join(" • ") : "Google Places result";
+
+    source.textContent = "Google Places";
+    directionsButton.textContent = "Directions";
+    directionsButton.addEventListener("click", () => openDirections(place));
 
     header.append(name, distance);
     actions.appendChild(directionsButton);
@@ -338,33 +150,156 @@ function createRestaurantCard(restaurant) {
     restaurantList.appendChild(card);
 }
 
-function getDirections(destinationLat, destinationLon) {
-    const destination = `${destinationLat},${destinationLon}`;
-
-    if (currentUserLocation) {
-        const origin = `${currentUserLocation.lat},${currentUserLocation.lon}`;
-        const url = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${origin};${destination}`;
-        window.open(url, "_blank", "noopener");
+function openDirections(place) {
+    if (place.googleMapsUri) {
+        window.open(place.googleMapsUri, "_blank", "noopener");
         return;
     }
 
-    const url = `https://www.openstreetmap.org/?mlat=${destinationLat}&mlon=${destinationLon}#map=16/${destinationLat}/${destinationLon}`;
-    window.open(url, "_blank", "noopener");
+    const destination = `${place.location.lat},${place.location.lng}`;
+    const origin = currentUserLocation ? `${currentUserLocation.lat},${currentUserLocation.lng}` : "";
+    const url = new URL("https://www.google.com/maps/dir/");
+
+    if (origin) {
+        url.searchParams.set("api", "1");
+        url.searchParams.set("origin", origin);
+        url.searchParams.set("destination", destination);
+    } else {
+        url.searchParams.set("api", "1");
+        url.searchParams.set("destination", destination);
+    }
+
+    window.open(url.toString(), "_blank", "noopener");
 }
 
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-        0.5 - Math.cos(dLat) / 2 +
-        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
-        (1 - Math.cos(dLon)) / 2;
-
-    return R * 2 * Math.asin(Math.sqrt(a));
+function getCardColor(seed) {
+    const colors = ["#784e5c", "#43a17f", "#bd69ff", "#fa639a", "#3fb1e5", "#a18dc2"];
+    const index = Math.abs(hashString(seed)) % colors.length;
+    return colors[index];
 }
 
-window.addEventListener("load", () => {
+function hashString(value) {
+    let hash = 0;
+
+    for (let index = 0; index < value.length; index += 1) {
+        hash = ((hash << 5) - hash) + value.charCodeAt(index);
+        hash |= 0;
+    }
+
+    return hash;
+}
+
+async function initializeMaps() {
+    if (!appConfig.googleMapsBrowserKey) {
+        document.getElementById("map").classList.add("map-disabled");
+        document.getElementById("map").textContent = "Add a browser-restricted Google Maps API key in config.js to enable the map.";
+        setStatus("Map key missing. Search still works once the backend is configured.", true);
+        return;
+    }
+
+    await loadGoogleMapsScript(appConfig.googleMapsBrowserKey);
+
+    const { Map, InfoWindow } = await google.maps.importLibrary("maps");
+    const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+
+    map = new Map(document.getElementById("map"), {
+        center: DEFAULT_LOCATION,
+        zoom: DEFAULT_ZOOM,
+        mapId: appConfig.googleMapsMapId || undefined,
+        streetViewControl: false,
+        mapTypeControl: false
+    });
+
+    infoWindow = new InfoWindow();
+    window.AdvancedMarkerElement = AdvancedMarkerElement;
+}
+
+function centerMap(lat, lng, zoom = 14) {
+    if (!map) {
+        return;
+    }
+
+    map.setCenter({ lat, lng });
+    map.setZoom(zoom);
+}
+
+function updateUserMarker(lat, lng) {
+    if (!map || !window.AdvancedMarkerElement) {
+        return;
+    }
+
+    if (userMarker) {
+        userMarker.position = { lat, lng };
+        return;
+    }
+
+    userMarker = new window.AdvancedMarkerElement({
+        map,
+        position: { lat, lng },
+        title: "You are here"
+    });
+}
+
+function addPlaceMarker(place) {
+    if (!map || !window.AdvancedMarkerElement) {
+        return;
+    }
+
+    const marker = new window.AdvancedMarkerElement({
+        map,
+        position: place.location,
+        title: place.name
+    });
+
+    marker.addListener("click", () => {
+        infoWindow.setContent(`<strong>${escapeHtml(place.name)}</strong><br>${escapeHtml(place.address)}`);
+        infoWindow.open({ anchor: marker, map });
+    });
+
+    placeMarkers.push(marker);
+}
+
+function escapeHtml(value) {
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
+function loadGoogleMapsScript(apiKey) {
+    if (window.google?.maps?.importLibrary) {
+        return Promise.resolve();
+    }
+
+    if (window.__googleMapsPromise) {
+        return window.__googleMapsPromise;
+    }
+
+    window.__googleMapsPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Google Maps JavaScript API failed to load."));
+
+        document.head.appendChild(script);
+    });
+
+    return window.__googleMapsPromise;
+}
+
+window.addEventListener("load", async () => {
+    try {
+        await initializeMaps();
+    } catch (error) {
+        console.error("Map initialization failed:", error);
+        setStatus("Google Maps failed to load. Check the browser key and referrer restrictions.", true);
+    }
+
     setStatus("Requesting your location to find nearby biriyani places...");
     getUserLocation(updateMapWithLocation);
 });

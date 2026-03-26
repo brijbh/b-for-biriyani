@@ -1,0 +1,6 @@
+name = "b-for-biriyani-search"
+main = "src/index.js"
+compatibility_date = "2026-03-27"
+
+[vars]
+ALLOWED_ORIGIN = "https://brijbh.github.io"

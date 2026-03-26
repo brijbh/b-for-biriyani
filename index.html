@@ -6,7 +6,6 @@
     <title>B for Biriyani</title>
     <meta name="description" content="Find nearby biriyani spots, see distance and directions, and enjoy quick biriyani facts and recipes.">
     <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 </head>
 <body>
 
@@ -17,6 +16,7 @@
     <p class="status-message" id="status-message" aria-live="polite"></p>
 
     <div id="map"></div>
+    <p class="provider-note">Search results are powered by Google Places when the backend and keys are configured.</p>
 
     <div class="container" id="restaurant-list">
         <!-- Restaurant cards will be dynamically inserted here -->
@@ -36,7 +36,7 @@
         </div>
     </div>
 
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="config.js"></script>
     <script src="location.js"></script>
     <script src="script.js"></script>
     <script src="footerscript.js"></script>
