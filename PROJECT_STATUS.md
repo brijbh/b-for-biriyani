@@ -9,6 +9,22 @@ deployed: https://brijbh.github.io/b-for-biriyani/
 ## Summary
 B for Biriyani is a location-based web app that helps you find nearby restaurants serving biriyani, with a static frontend on GitHub Pages and a Cloudflare Worker backend that filters Google Places results down to biriyani-specific name matches.
 
+## Tech stack
+- Frontend: plain HTML/CSS/vanilla JavaScript (no framework/build step), Google Maps JavaScript API, browser Geolocation API
+- Backend: Cloudflare Worker (`backend/cloudflare-worker`, `wrangler.toml`) calling the Google Places Text Search API, with short-lived edge caching
+- Hosting: static frontend on GitHub Pages, backend deployed to Cloudflare Workers
+
+## Run locally
+Frontend:
+```bash
+npx serve .
+```
+Backend (from `backend/cloudflare-worker`):
+```bash
+wrangler dev
+```
+Then set `apiBaseUrl` in `config.js` (copied from `config.example.js`) to `http://localhost:8787`.
+
 ## Recent progress
 - Migrated discovery from OSM/Overpass to a Google Places Text Search backend (Cloudflare Worker at `backend/cloudflare-worker`) for stricter name-based biriyani matching
 - Split the architecture into a static frontend (keeps API keys out of GitHub Pages) and a serverless backend with short-lived edge caching
